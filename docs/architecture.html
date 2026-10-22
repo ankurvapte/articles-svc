@@ -1,0 +1,453 @@
+<title>articles-svc Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one reading column of numbered figures; each layer of the service keeps one colour everywhere */
+:root{
+  --bg:#f5f7fa; --surface:#ffffff; --surface-2:#eef1f6; --fg:#16202e; --muted:#5a6575; --line:#c6cdd8;
+  --accent:#2f5bd3;
+  --api:#2f5bd3; --api-bg:#e4ebfb;
+  --app:#0e8566; --app-bg:#dcf1e9;
+  --dom:#a8701a; --dom-bg:#f7ecd8;
+  --infra:#7449c4; --infra-bg:#ece4f9;
+  --warn:#b4412f; --warn-bg:#fbe8e4;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e131a; --surface:#161d27; --surface-2:#1d2633; --fg:#e3e8ef; --muted:#97a2b2; --line:#2f3a49;
+  --accent:#7d9df5;
+  --api:#7d9df5; --api-bg:#1b2847;
+  --app:#4ec8a1; --app-bg:#123229;
+  --dom:#e2ac5c; --dom-bg:#382b16;
+  --infra:#b49af0; --infra-bg:#291f41;
+  --warn:#f08b77; --warn-bg:#3a1e19;
+  color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0e131a; --surface:#161d27; --surface-2:#1d2633; --fg:#e3e8ef; --muted:#97a2b2; --line:#2f3a49;
+  --accent:#7d9df5;
+  --api:#7d9df5; --api-bg:#1b2847;
+  --app:#4ec8a1; --app-bg:#123229;
+  --dom:#e2ac5c; --dom-bg:#382b16;
+  --infra:#b49af0; --infra-bg:#291f41;
+  --warn:#f08b77; --warn-bg:#3a1e19;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--sans);font-size:15px;line-height:1.55}
+.wrap{max-width:1120px;margin:0 auto;padding-block:40px 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:48px}
+header{display:flex;flex-direction:column;gap:10px;max-width:70ch}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1{font-size:clamp(28px,4vw,40px);line-height:1.15;margin:0;font-weight:700;text-wrap:balance;letter-spacing:-.01em}
+h1 code{font-family:var(--mono);font-weight:500;color:var(--accent)}
+header p{margin:0;color:var(--muted)}
+nav{display:flex;flex-wrap:wrap;gap:8px}
+nav a{font-size:13px;color:var(--fg);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:4px 12px;background:var(--surface)}
+nav a:hover,nav a:focus-visible{border-color:var(--accent);color:var(--accent);outline:none}
+section{display:flex;flex-direction:column;gap:16px}
+.sec-head{display:flex;flex-direction:column;gap:4px;max-width:72ch}
+.sec-head .num{font-family:var(--mono);font-size:12px;color:var(--accent);letter-spacing:.06em}
+h2{margin:0;font-size:22px;line-height:1.25;text-wrap:balance}
+.sec-head p{margin:0;color:var(--muted)}
+figure{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+svg.d{display:block;width:100%;height:auto;min-width:820px}
+svg.rings{display:block;width:100%;height:auto;max-width:560px;margin:0 auto}
+.legend{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:13px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:8px}
+.sw{width:14px;height:14px;border-radius:3px;border:1.5px solid;display:inline-block}
+.ln{width:28px;height:0;border-top:2px solid var(--fg);display:inline-block}
+.ln.dash{border-top:2px dashed var(--muted)}
+.two{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:24px;align-items:center}
+@media (max-width:760px){.two{grid-template-columns:minmax(0,1fr)}}
+.rules{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:12px}
+.rules li{display:grid;grid-template-columns:14px minmax(0,1fr);gap:12px;align-items:start}
+.rules .sw{margin-top:5px}
+.rules b{display:block;font-weight:600}
+.rules code,.cards code,figcaption code{font-family:var(--mono);font-size:.88em}
+.rules small{color:var(--muted);font-size:13.5px;display:block}
+figcaption{font-size:13.5px;color:var(--muted);max-width:80ch}
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:760px){.cards{grid-template-columns:minmax(0,1fr)}}
+.card{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--surface);display:flex;flex-direction:column;gap:4px}
+.card .code{font-family:var(--mono);font-weight:500;color:var(--warn);font-size:14px}
+.card p{margin:0;font-size:13.5px;color:var(--muted)}
+
+/* SVG styling — all colours through tokens */
+svg text{font-family:var(--sans);fill:var(--fg)}
+svg .t{font-size:14px;font-weight:600}
+svg .s{font-size:11.5px;fill:var(--muted)}
+svg .m{font-family:var(--mono);font-size:11.5px}
+svg .mm{font-family:var(--mono);font-size:11px;fill:var(--muted)}
+svg .lbl{font-size:11px;fill:var(--muted);letter-spacing:.08em;font-family:var(--mono)}
+svg .box{fill:var(--surface);stroke:var(--line);stroke-width:1.5}
+svg .plan{fill:var(--surface);stroke:var(--muted);stroke-width:1.3;stroke-dasharray:5 4}
+svg .frame{fill:none;stroke:var(--line);stroke-width:1.5;stroke-dasharray:7 5}
+svg .ctr{fill:var(--surface-2);stroke:var(--accent);stroke-width:2}
+svg .api{fill:var(--api-bg);stroke:var(--api);stroke-width:1.5}
+svg .app{fill:var(--app-bg);stroke:var(--app);stroke-width:1.5}
+svg .dom{fill:var(--dom-bg);stroke:var(--dom);stroke-width:1.5}
+svg .infra{fill:var(--infra-bg);stroke:var(--infra);stroke-width:1.5}
+svg .warn{fill:var(--warn-bg);stroke:var(--warn);stroke-width:1.5;stroke-dasharray:5 4}
+svg .note{fill:var(--surface-2);stroke:var(--line);stroke-width:1}
+svg .k-api{fill:var(--api)} svg .k-app{fill:var(--app)} svg .k-dom{fill:var(--dom)} svg .k-infra{fill:var(--infra)} svg .k-warn{fill:var(--warn)}
+svg .a{fill:none;stroke:var(--fg);stroke-width:1.5}
+svg .ap{fill:none;stroke:var(--muted);stroke-width:1.4;stroke-dasharray:5 4}
+svg .ar{fill:none;stroke:var(--fg);stroke-width:1.3;stroke-dasharray:4 3}
+svg .life{stroke:var(--line);stroke-width:1.3;stroke-dasharray:3 4}
+svg .head-fg{fill:var(--fg)} svg .head-mu{fill:var(--muted)}
+@media (prefers-reduced-motion:no-preference){nav a{transition:border-color .15s,color .15s}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-fg"/></marker>
+    <marker id="arrp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="head-mu"/></marker>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Containerization project · news app</span>
+    <h1><code>articles-svc</code> architecture &amp; workflow</h1>
+    <p>How the first microservice of the news app is put together, how a request flows through it, and how it goes from source code to a running container. Solid lines show what is built today; dashed lines show what is planned.</p>
+    <nav aria-label="Diagrams">
+      <a href="#system">System view</a>
+      <a href="#layers">Clean architecture</a>
+      <a href="#request">Request workflow</a>
+      <a href="#lifecycle">Build &amp; run lifecycle</a>
+    </nav>
+  </header>
+
+  <!-- 1. SYSTEM -->
+  <section id="system">
+    <div class="sec-head">
+      <span class="num">ARCHITECTURE · 1</span>
+      <h2>System view</h2>
+      <p>Today a client calls <code>articles-svc</code> directly on port 8080. The planned gateway, sibling services, database and broker show where the system is heading.</p>
+    </div>
+    <figure>
+      <div class="scroll">
+      <svg class="d" viewBox="0 0 960 470" role="img" aria-label="System architecture: client, planned API gateway, articles-svc container with four layers and news.json, planned users, comments and search services, message broker, Postgres and logs">
+        <!-- docker host -->
+        <rect class="frame" x="370" y="12" width="572" height="446" rx="14"/>
+        <text class="lbl" x="388" y="446">DOCKER HOST · DOCKER COMPOSE</text>
+
+        <!-- client -->
+        <rect class="box" x="20" y="215" width="140" height="80" rx="8"/>
+        <text class="t" x="90" y="249" text-anchor="middle">Client</text>
+        <text class="s" x="90" y="269" text-anchor="middle">web · mobile · curl</text>
+
+        <!-- gateway (planned) -->
+        <rect class="plan" x="190" y="215" width="140" height="80" rx="8"/>
+        <text class="t" x="260" y="243" text-anchor="middle">API Gateway</text>
+        <text class="s" x="260" y="261" text-anchor="middle">NGINX / Traefik</text>
+        <text class="mm" x="260" y="281" text-anchor="middle">planned</text>
+
+        <line class="ap" x1="160" y1="255" x2="188" y2="255" marker-end="url(#arrp)"/>
+        <line class="ap" x1="330" y1="255" x2="393" y2="255" marker-end="url(#arrp)"/>
+        <!-- today: direct -->
+        <path class="a" d="M90,295 V322 H393" marker-end="url(#arr)"/>
+        <text class="mm" x="104" y="314">today: direct to localhost:8080</text>
+
+        <!-- bus to planned services -->
+        <path class="ap" d="M260,215 V28 H704 V230"/>
+        <line class="ap" x1="704" y1="80" x2="718" y2="80" marker-end="url(#arrp)"/>
+        <line class="ap" x1="704" y1="155" x2="718" y2="155" marker-end="url(#arrp)"/>
+        <line class="ap" x1="704" y1="230" x2="718" y2="230" marker-end="url(#arrp)"/>
+
+        <!-- articles-svc container -->
+        <rect class="ctr" x="395" y="40" width="295" height="300" rx="10"/>
+        <text class="t" x="413" y="66" style="font-size:15px">articles-svc</text>
+        <text class="mm" x="674" y="66" text-anchor="end">container · :8080</text>
+
+        <rect class="api" x="413" y="82" width="259" height="34" rx="6"/>
+        <text class="k-api" x="425" y="104" style="font-size:12.5px;font-weight:600">API</text>
+        <text class="s" x="660" y="104" text-anchor="end">routes · schemas · health</text>
+
+        <rect class="app" x="413" y="124" width="259" height="34" rx="6"/>
+        <text class="k-app" x="425" y="146" style="font-size:12.5px;font-weight:600">Application</text>
+        <text class="s" x="660" y="146" text-anchor="end">ArticleService · ports</text>
+
+        <rect class="dom" x="413" y="166" width="259" height="34" rx="6"/>
+        <text class="k-dom" x="425" y="188" style="font-size:12.5px;font-weight:600">Domain</text>
+        <text class="s" x="660" y="188" text-anchor="end">Article · Author · Category</text>
+
+        <rect class="infra" x="413" y="208" width="259" height="34" rx="6"/>
+        <text class="k-infra" x="425" y="230" style="font-size:12.5px;font-weight:600">Infrastructure</text>
+        <text class="s" x="660" y="230" text-anchor="end">JsonArticleRepository</text>
+
+        <rect class="box" x="413" y="258" width="259" height="40" rx="6"/>
+        <text class="m" x="425" y="282">data/news.json</text>
+        <text class="s" x="660" y="282" text-anchor="end">10 articles</text>
+        <line class="a" x1="542" y1="242" x2="542" y2="256" marker-end="url(#arr)"/>
+
+        <text class="mm" x="413" y="324">main.py wires layers · config from env vars</text>
+
+        <!-- postgres planned -->
+        <rect class="plan" x="395" y="368" width="295" height="54" rx="8"/>
+        <text class="t" x="542" y="391" text-anchor="middle">articles-db · Postgres</text>
+        <text class="mm" x="542" y="409" text-anchor="middle">planned · replaces news.json</text>
+        <line class="ap" x1="542" y1="340" x2="542" y2="366" marker-end="url(#arrp)"/>
+
+        <!-- planned services -->
+        <rect class="plan" x="720" y="55" width="200" height="50" rx="8"/>
+        <text class="t" x="820" y="77" text-anchor="middle">users-svc</text>
+        <text class="s" x="820" y="94" text-anchor="middle">auth · profiles</text>
+
+        <rect class="plan" x="720" y="130" width="200" height="50" rx="8"/>
+        <text class="t" x="820" y="152" text-anchor="middle">comments-svc</text>
+        <text class="s" x="820" y="169" text-anchor="middle">reader comments</text>
+
+        <rect class="plan" x="720" y="205" width="200" height="50" rx="8"/>
+        <text class="t" x="820" y="227" text-anchor="middle">search-svc</text>
+        <text class="s" x="820" y="244" text-anchor="middle">full-text search</text>
+
+        <rect class="plan" x="720" y="290" width="200" height="54" rx="8"/>
+        <text class="t" x="820" y="313" text-anchor="middle">Message broker</text>
+        <text class="s" x="820" y="331" text-anchor="middle">ArticlePublished events</text>
+        <line class="ap" x1="690" y1="300" x2="718" y2="300" marker-end="url(#arrp)"/>
+        <line class="ap" x1="820" y1="290" x2="820" y2="258" marker-end="url(#arrp)"/>
+
+        <rect class="box" x="720" y="372" width="200" height="54" rx="8"/>
+        <text class="t" x="820" y="395" text-anchor="middle">Logs &amp; probes</text>
+        <text class="s" x="820" y="413" text-anchor="middle">stdout JSON · /health/*</text>
+        <path class="a" d="M690,328 H705 V399 H718" marker-end="url(#arr)"/>
+      </svg>
+      </div>
+      <div class="legend">
+        <span><span class="ln"></span>built today</span>
+        <span><span class="ln dash"></span>planned</span>
+        <span><span class="sw" style="background:var(--api-bg);border-color:var(--api)"></span>API</span>
+        <span><span class="sw" style="background:var(--app-bg);border-color:var(--app)"></span>Application</span>
+        <span><span class="sw" style="background:var(--dom-bg);border-color:var(--dom)"></span>Domain</span>
+        <span><span class="sw" style="background:var(--infra-bg);border-color:var(--infra)"></span>Infrastructure</span>
+      </div>
+    </figure>
+  </section>
+
+  <!-- 2. LAYERS -->
+  <section id="layers">
+    <div class="sec-head">
+      <span class="num">ARCHITECTURE · 2</span>
+      <h2>Inside the container: clean architecture</h2>
+      <p>Each ring may only depend on rings inside it. The domain knows nothing about FastAPI, JSON or Docker, so it can be tested with no framework installed.</p>
+    </div>
+    <figure>
+      <div class="two">
+        <svg class="rings" viewBox="0 0 600 520" role="img" aria-label="Concentric rings: API and Infrastructure on the outside, Application in the middle, Domain at the core, with arrows pointing inward">
+          <circle class="infra" cx="300" cy="260" r="220"/>
+          <path class="api" d="M80,260 A220,220 0 0 1 520,260 Z"/>
+          <circle class="app" cx="300" cy="260" r="145"/>
+          <circle class="dom" cx="300" cy="260" r="70"/>
+
+          <text class="k-api" x="300" y="72" text-anchor="middle" style="font-size:15px;font-weight:700">API layer</text>
+          <text class="mm" x="300" y="92" text-anchor="middle">routes · schemas · health</text>
+
+          <text class="k-infra" x="300" y="438" text-anchor="middle" style="font-size:15px;font-weight:700">Infrastructure</text>
+          <text class="mm" x="300" y="458" text-anchor="middle">json_repository.py</text>
+
+          <text class="k-app" x="300" y="146" text-anchor="middle" style="font-size:15px;font-weight:700">Application</text>
+          <text class="mm" x="300" y="165" text-anchor="middle">use_cases · ports</text>
+
+          <text class="k-dom" x="300" y="257" text-anchor="middle" style="font-size:15px;font-weight:700">Domain</text>
+          <text class="mm" x="300" y="277" text-anchor="middle">models.py</text>
+
+          <line class="a" x1="152" y1="112" x2="192" y2="152" marker-end="url(#arr)"/>
+          <line class="a" x1="152" y1="408" x2="192" y2="368" marker-end="url(#arr)"/>
+          <line class="a" x1="448" y1="408" x2="408" y2="368" marker-end="url(#arr)"/>
+          <line class="a" x1="208" y1="168" x2="246" y2="206" marker-end="url(#arr)"/>
+          <line class="a" x1="392" y1="352" x2="354" y2="314" marker-end="url(#arr)"/>
+
+          <text class="s" x="590" y="30" text-anchor="end">arrows = "depends on"</text>
+          <text class="s" x="590" y="508" text-anchor="end">main.py is the composition root</text>
+        </svg>
+        <ul class="rules">
+          <li><span class="sw" style="background:var(--dom-bg);border-color:var(--dom)"></span><div><b>Domain</b><small><code>Article</code>, <code>Author</code>, <code>Category</code> and the rules they enforce: a title can't be empty, and <code>updated_at</code> can't be earlier than <code>published_at</code>. Pure Python only.</small></div></li>
+          <li><span class="sw" style="background:var(--app-bg);border-color:var(--app)"></span><div><b>Application</b><small><code>ArticleService</code> filters, sorts and paginates. It talks to storage only through the <code>ArticleRepository</code> port (an interface) and has no HTTP concepts.</small></div></li>
+          <li><span class="sw" style="background:var(--infra-bg);border-color:var(--infra)"></span><div><b>Infrastructure</b><small><code>JsonArticleRepository</code> implements the port by reading <code>news.json</code>. A future <code>PostgresArticleRepository</code> drops in here with no other changes.</small></div></li>
+          <li><span class="sw" style="background:var(--api-bg);border-color:var(--api)"></span><div><b>API</b><small>A thin FastAPI layer. It validates input, calls a use case and maps the result to versioned <code>/api/v1</code> response schemas.</small></div></li>
+        </ul>
+      </div>
+    </figure>
+  </section>
+
+  <!-- 3. REQUEST WORKFLOW -->
+  <section id="request">
+    <div class="sec-head">
+      <span class="num">WORKFLOW · 3</span>
+      <h2>Request workflow: listing technology articles</h2>
+      <p>What happens inside the container for <code>GET /api/v1/articles?category=technology</code>, from the moment the request arrives until the JSON goes back.</p>
+    </div>
+    <figure>
+      <div class="scroll">
+      <svg class="d" viewBox="0 0 1080 650" role="img" aria-label="Sequence diagram of a list-articles request through middleware, router, ArticleService, repository and the Article domain object">
+        <!-- lifelines -->
+        <line class="life" x1="90" y1="68" x2="90" y2="640"/>
+        <line class="life" x1="270" y1="68" x2="270" y2="640"/>
+        <line class="life" x1="450" y1="68" x2="450" y2="640"/>
+        <line class="life" x1="630" y1="68" x2="630" y2="640"/>
+        <line class="life" x1="810" y1="68" x2="810" y2="640"/>
+        <line class="life" x1="990" y1="68" x2="990" y2="640"/>
+
+        <!-- headers -->
+        <rect class="box" x="15" y="16" width="150" height="52" rx="8"/>
+        <text class="t" x="90" y="38" text-anchor="middle">Client</text>
+        <text class="mm" x="90" y="56" text-anchor="middle">browser · curl</text>
+
+        <rect class="api" x="195" y="16" width="150" height="52" rx="8"/>
+        <text class="t" x="270" y="38" text-anchor="middle">Middleware</text>
+        <text class="mm" x="270" y="56" text-anchor="middle">main.py</text>
+
+        <rect class="api" x="375" y="16" width="150" height="52" rx="8"/>
+        <text class="t" x="450" y="38" text-anchor="middle">Router</text>
+        <text class="mm" x="450" y="56" text-anchor="middle">api/routes.py</text>
+
+        <rect class="app" x="555" y="16" width="150" height="52" rx="8"/>
+        <text class="t" x="630" y="38" text-anchor="middle">ArticleService</text>
+        <text class="mm" x="630" y="56" text-anchor="middle">use_cases.py</text>
+
+        <rect class="infra" x="735" y="16" width="150" height="52" rx="8"/>
+        <text class="t" x="810" y="38" text-anchor="middle">Repository</text>
+        <text class="mm" x="810" y="56" text-anchor="middle">json_repository.py</text>
+
+        <rect class="dom" x="915" y="16" width="150" height="52" rx="8"/>
+        <text class="t" x="990" y="38" text-anchor="middle">Article</text>
+        <text class="mm" x="990" y="56" text-anchor="middle">domain/models.py</text>
+
+        <!-- 1 -->
+        <text class="m" x="180" y="86" text-anchor="middle">GET /api/v1/articles</text>
+        <text class="m" x="180" y="101" text-anchor="middle">?category=technology</text>
+        <line class="a" x1="90" y1="110" x2="268" y2="110" marker-end="url(#arr)"/>
+        <!-- 2 -->
+        <rect class="note" x="170" y="124" width="200" height="30" rx="5"/>
+        <text class="s" x="270" y="143" text-anchor="middle">set X-Request-ID · start timer</text>
+        <!-- 3 -->
+        <text class="m" x="360" y="177" text-anchor="middle">route to handler</text>
+        <line class="a" x1="270" y1="185" x2="448" y2="185" marker-end="url(#arr)"/>
+        <!-- 4 -->
+        <rect class="note" x="350" y="199" width="200" height="30" rx="5"/>
+        <text class="s" x="450" y="218" text-anchor="middle">validate query → Category enum</text>
+        <!-- 5 -->
+        <text class="m" x="540" y="250" text-anchor="middle">list_articles(filter, page)</text>
+        <line class="a" x1="450" y1="258" x2="628" y2="258" marker-end="url(#arr)"/>
+        <!-- 6 -->
+        <text class="m" x="720" y="292" text-anchor="middle">list_all()</text>
+        <line class="a" x1="630" y1="300" x2="808" y2="300" marker-end="url(#arr)"/>
+        <!-- 7 -->
+        <text class="m" x="720" y="332" text-anchor="middle">list[Article]</text>
+        <line class="ar" x1="810" y1="340" x2="632" y2="340" marker-end="url(#arr)"/>
+        <!-- 8 -->
+        <text class="m" x="810" y="372" text-anchor="middle">filter: is_public, category</text>
+        <line class="a" x1="630" y1="380" x2="988" y2="380" marker-end="url(#arr)"/>
+        <!-- 9 -->
+        <rect class="note" x="530" y="398" width="200" height="30" rx="5"/>
+        <text class="s" x="630" y="417" text-anchor="middle">sort newest · slice the page</text>
+        <!-- 10 -->
+        <text class="m" x="540" y="447" text-anchor="middle">Page(items, total=2)</text>
+        <line class="ar" x1="630" y1="455" x2="452" y2="455" marker-end="url(#arr)"/>
+        <!-- 11 -->
+        <rect class="note" x="350" y="472" width="200" height="30" rx="5"/>
+        <text class="s" x="450" y="491" text-anchor="middle">map → ArticleSummaryOut</text>
+        <!-- 12 -->
+        <text class="m" x="360" y="522" text-anchor="middle">200 ArticleListOut</text>
+        <line class="ar" x1="450" y1="530" x2="272" y2="530" marker-end="url(#arr)"/>
+        <!-- 13 -->
+        <rect class="note" x="170" y="548" width="200" height="30" rx="5"/>
+        <text class="s" x="270" y="567" text-anchor="middle">add header · write JSON log line</text>
+        <!-- 14 -->
+        <text class="m" x="180" y="600" text-anchor="middle">200 {data, pagination}</text>
+        <line class="ar" x1="270" y1="608" x2="92" y2="608" marker-end="url(#arr)"/>
+      </svg>
+      </div>
+      <div class="legend">
+        <span><span class="ln"></span>call</span>
+        <span><span class="ln" style="border-top-style:dashed"></span>return</span>
+        <span>Grey boxes are work done inside one component</span>
+      </div>
+    </figure>
+    <div class="cards">
+      <div class="card"><span class="code">422 validation_error</span><p>The Router rejects a bad query, for example <code>?category=gossip</code>, before any use case runs.</p></div>
+      <div class="card"><span class="code">404 not_found</span><p><code>ArticleService</code> raises <code>ArticleNotFound</code>, and a handler in <code>main.py</code> turns it into the standard error shape.</p></div>
+      <div class="card"><span class="code">503 not_ready</span><p><code>/health/ready</code> returns this when <code>news.json</code> failed to load, so no traffic is routed to the container.</p></div>
+    </div>
+  </section>
+
+  <!-- 4. LIFECYCLE -->
+  <section id="lifecycle">
+    <div class="sec-head">
+      <span class="num">WORKFLOW · 4</span>
+      <h2>Build &amp; run lifecycle</h2>
+      <p>The path from editing code to a container serving traffic, and how it shuts down cleanly.</p>
+    </div>
+    <figure>
+      <div class="scroll">
+      <svg class="d" viewBox="0 0 1080 425" role="img" aria-label="Lifecycle: write code, run tests, docker build, docker compose up, then startup, readiness probe, serve requests, SIGTERM shutdown, with a failure branch to 503 not ready">
+        <text class="lbl" x="30" y="44">BUILD · ON YOUR MACHINE</text>
+        <text class="lbl" x="30" y="206">RUN · INSIDE THE CONTAINER</text>
+
+        <!-- row 1 -->
+        <rect class="box" x="30" y="60" width="220" height="88" rx="8"/>
+        <text class="t" x="48" y="90">Write code</text><text class="mm" x="232" y="90" text-anchor="end">1</text>
+        <text class="s" x="48" y="112">domain → app → infra → api</text>
+        <text class="s" x="48" y="130">guided by CLAUDE.md rules</text>
+
+        <rect class="box" x="290" y="60" width="220" height="88" rx="8"/>
+        <text class="t" x="308" y="90">Run tests</text><text class="mm" x="492" y="90" text-anchor="end">2</text>
+        <text class="s" x="308" y="112">unittest: 13 domain/use-case</text>
+        <text class="s" x="308" y="130">pytest: API contract</text>
+
+        <rect class="box" x="550" y="60" width="220" height="88" rx="8"/>
+        <text class="t" x="568" y="90">docker build</text><text class="mm" x="752" y="90" text-anchor="end">3</text>
+        <text class="s" x="568" y="112">builder stage installs deps</text>
+        <text class="s" x="568" y="130">runtime: slim, non-root user</text>
+
+        <rect class="box" x="810" y="60" width="220" height="88" rx="8"/>
+        <text class="t" x="828" y="90">docker compose up</text><text class="mm" x="1012" y="90" text-anchor="end">4</text>
+        <text class="s" x="828" y="112">env vars injected</text>
+        <text class="s" x="828" y="130">port 8080 published</text>
+
+        <line class="a" x1="250" y1="104" x2="288" y2="104" marker-end="url(#arr)"/>
+        <line class="a" x1="510" y1="104" x2="548" y2="104" marker-end="url(#arr)"/>
+        <line class="a" x1="770" y1="104" x2="808" y2="104" marker-end="url(#arr)"/>
+        <path class="a" d="M920,148 V182 H140 V214" marker-end="url(#arr)"/>
+
+        <!-- row 2 -->
+        <rect class="api" x="30" y="216" width="220" height="88" rx="8"/>
+        <text class="t" x="48" y="246">Startup (lifespan)</text><text class="mm" x="232" y="246" text-anchor="end">5</text>
+        <text class="s" x="48" y="268">load news.json → repository</text>
+        <text class="s" x="48" y="286">wire ArticleService</text>
+
+        <rect class="api" x="290" y="216" width="220" height="88" rx="8"/>
+        <text class="t" x="308" y="246">Readiness probe</text><text class="mm" x="492" y="246" text-anchor="end">6</text>
+        <text class="s" x="308" y="268">GET /health/ready → 200</text>
+        <text class="s" x="308" y="286">HEALTHCHECK every 30s</text>
+
+        <rect class="api" x="550" y="216" width="220" height="88" rx="8"/>
+        <text class="t" x="568" y="246">Serve requests</text><text class="mm" x="752" y="246" text-anchor="end">7</text>
+        <text class="s" x="568" y="268">/api/v1/* (see workflow 3)</text>
+        <text class="s" x="568" y="286">JSON logs + X-Request-ID</text>
+
+        <rect class="api" x="810" y="216" width="220" height="88" rx="8"/>
+        <text class="t" x="828" y="246">SIGTERM → shutdown</text><text class="mm" x="1012" y="246" text-anchor="end">8</text>
+        <text class="s" x="828" y="268">uvicorn is PID 1 (exec form)</text>
+        <text class="s" x="828" y="286">lifespan cleanup, exit 0</text>
+
+        <line class="a" x1="250" y1="260" x2="288" y2="260" marker-end="url(#arr)"/>
+        <line class="a" x1="510" y1="260" x2="548" y2="260" marker-end="url(#arr)"/>
+        <line class="a" x1="770" y1="260" x2="808" y2="260" marker-end="url(#arr)"/>
+
+        <!-- failure branch -->
+        <line class="ap" x1="400" y1="304" x2="400" y2="348" marker-end="url(#arrp)"/>
+        <text class="s" x="410" y="331">if news.json failed to load</text>
+        <rect class="warn" x="290" y="350" width="220" height="62" rx="8"/>
+        <text class="k-warn" x="308" y="374" style="font-size:13px;font-weight:600;font-family:var(--mono)">503 not_ready</text>
+        <text class="s" x="308" y="396">no traffic routed · check DATA_FILE</text>
+      </svg>
+      </div>
+      <figcaption>Steps 1–4 run on your machine (and later in CI/CD). Steps 5–8 happen inside the container every time it starts, which is why config comes from env vars and the health endpoints must stay accurate.</figcaption>
+    </figure>
+  </section>
+</div>

@@ -1,0 +1,11 @@
+services:
+  articles-svc:
+    build: .
+    image: articles-svc:local
+    ports:
+      - "8090:8080"
+    environment:
+      LOG_LEVEL: INFO
+      DEFAULT_PAGE_SIZE: "5"
+      MAX_PAGE_SIZE: "50"
+    restart: unless-stopped
