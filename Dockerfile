@@ -23,6 +23,8 @@ RUN groupadd --system app && useradd --system --gid app --no-create-home app
 WORKDIR /app
 COPY --from=builder /install /usr/local
 COPY --chown=app:app app ./app
+# Seed data: loaded into an empty Postgres table via SEED_FILE, or used
+# directly by the JSON adapter when DATABASE_URL is not set.
 COPY --chown=app:app data ./data
 
 USER app

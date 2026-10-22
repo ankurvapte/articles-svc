@@ -15,9 +15,11 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.api import health, routes
+from app.application.ports import ArticleRepository, StorageUnavailable
 from app.application.use_cases import ArticleNotFound, ArticleService
-from app.config import load_settings
+from app.config import Settings, load_settings
 from app.infrastructure.json_repository import JsonArticleRepository
+from app.infrastructure.postgres_repository import PostgresArticleRepository
 from app.logging_setup import configure_logging
 
 settings = load_settings()
@@ -25,10 +27,19 @@ configure_logging(settings.service_name, settings.log_level)
 logger = logging.getLogger("articles")
 
 
+def build_repository(settings: Settings) -> ArticleRepository:
+    # The only place that picks an adapter; use cases only see the port.
+    if settings.database_url:
+        logger.info("Using Postgres storage")  # never log the URL: it holds the password
+        return PostgresArticleRepository(settings.database_url, settings.seed_file)
+    logger.info("Using JSON file storage", extra={"path": settings.data_file})
+    return JsonArticleRepository(settings.data_file)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: build infrastructure and inject it into the use cases.
-    repository = JsonArticleRepository(settings.data_file)
+    repository = build_repository(settings)
     app.state.settings = settings
     app.state.repository = repository
     app.state.article_service = ArticleService(repository)
@@ -36,6 +47,7 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown (runs on SIGTERM): close connections, flush buffers, etc.
     logger.info("Service shutting down")
+    repository.close()
 
 
 app = FastAPI(
@@ -79,6 +91,11 @@ def _error(request: Request, status: int, error: str, message: str) -> JSONRespo
 @app.exception_handler(ArticleNotFound)
 async def not_found_handler(request: Request, exc: ArticleNotFound):
     return _error(request, 404, "not_found", str(exc))
+
+
+@app.exception_handler(StorageUnavailable)
+async def storage_handler(request: Request, exc: StorageUnavailable):
+    return _error(request, 503, "storage_unavailable", str(exc))
 
 
 @app.exception_handler(RequestValidationError)

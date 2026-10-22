@@ -1,7 +1,8 @@
 """Infrastructure layer: a concrete ArticleRepository backed by a JSON file.
 
-This is the only place that knows the data lives in a file. Later, a
-PostgresArticleRepository can replace it without touching other layers.
+This is the only place that knows the data lives in a file. Used when
+DATABASE_URL is not set; PostgresArticleRepository replaces it without
+touching other layers.
 """
 from __future__ import annotations
 
@@ -70,3 +71,6 @@ class JsonArticleRepository:
 
     def is_ready(self) -> bool:
         return self._loaded
+
+    def close(self) -> None:
+        pass  # nothing to release; the file is read once at startup

@@ -11,6 +11,10 @@ from typing import Protocol
 from app.domain.models import Article
 
 
+class StorageUnavailable(Exception):
+    """Raised by adapters when the article storage cannot be reached."""
+
+
 class ArticleRepository(Protocol):
     def list_all(self) -> list[Article]: ...
 
@@ -19,3 +23,7 @@ class ArticleRepository(Protocol):
     def get_by_slug(self, slug: str) -> Article | None: ...
 
     def is_ready(self) -> bool: ...
+
+    def close(self) -> None:
+        """Release connections on shutdown."""
+        ...
