@@ -1,3 +1,6 @@
+# Dev-only default password; set ARTICLES_DB_PASSWORD in your shell or .env for anything else.
+x-articles-db-url: &articles-db-url postgresql://articles:${ARTICLES_DB_PASSWORD:-articles-dev-password}@articles-db:5432/articles
+
 services:
   articles-svc:
     build: .
@@ -8,13 +11,26 @@ services:
       LOG_LEVEL: INFO
       DEFAULT_PAGE_SIZE: "5"
       MAX_PAGE_SIZE: "50"
-      # Dev-only default password; set ARTICLES_DB_PASSWORD in your shell or .env for anything else.
-      DATABASE_URL: postgresql://articles:${ARTICLES_DB_PASSWORD:-articles-dev-password}@articles-db:5432/articles
+      DATABASE_URL: *articles-db-url
       SEED_FILE: /app/data/news.json
+    depends_on:
+      articles-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # One-shot: applies pending migrations, then exits. articles-svc starts only if
+  # it succeeds, so exactly one process changes the schema, however many replicas run.
+  articles-migrate:
+    build: .
+    image: articles-svc:local
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: *articles-db-url
     depends_on:
       articles-db:
         condition: service_healthy
-    restart: unless-stopped
+    healthcheck:
+      disable: true  # the image's HTTP healthcheck is for the API, not this job
 
   # Database per service: only articles-svc talks to this. No host port is
   # published; use `docker compose exec articles-db psql -U articles` to look inside.

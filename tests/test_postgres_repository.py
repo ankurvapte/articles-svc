@@ -1,6 +1,7 @@
-"""Contract tests for PostgresArticleRepository.
+"""Contract tests for PostgresArticleRepository and the Alembic migrations.
 
-Needs a throwaway Postgres; the tests drop and recreate the articles table:
+Needs a throwaway Postgres; every test drops the tables and runs the
+migrations from scratch, so they also prove the migrations work:
 
     docker run --rm -d --name articles-test-db -e POSTGRES_PASSWORD=test -p 55433:5432 postgres:17-alpine
     TEST_DATABASE_URL=postgresql://postgres:test@localhost:55433/postgres pytest tests/test_postgres_repository.py
@@ -17,6 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import psycopg  # noqa: E402
+from alembic import command  # noqa: E402
+from alembic.config import Config  # noqa: E402
 
 from app.application.ports import StorageUnavailable  # noqa: E402
 from app.application.use_cases import ArticleFilter, ArticleService  # noqa: E402
@@ -28,6 +31,22 @@ DB_URL = os.getenv("TEST_DATABASE_URL")
 SEED = ROOT / "data" / "news.json"
 METRO = "a1f3c2e0-0001-4c1a-9b10-000000000001"
 METRO_SLUG = "bengaluru-metro-yellow-line-ridership-milestone"
+
+
+def alembic_config() -> Config:
+    cfg = Config(str(ROOT / "alembic.ini"))
+    cfg.attributes["database_url"] = DB_URL
+    return cfg
+
+
+def reset_database() -> None:
+    with psycopg.connect(DB_URL, autocommit=True) as conn:
+        conn.execute("DROP TABLE IF EXISTS articles, alembic_version")
+
+
+def table_exists(name: str) -> bool:
+    with psycopg.connect(DB_URL) as conn:
+        return conn.execute("SELECT to_regclass(%s) IS NOT NULL", (name,)).fetchone()[0]
 
 
 class DatabaseDownTests(unittest.TestCase):
@@ -44,14 +63,38 @@ class DatabaseDownTests(unittest.TestCase):
 @unittest.skipUnless(DB_URL, "set TEST_DATABASE_URL to run Postgres tests")
 class PostgresArticleRepositoryTests(unittest.TestCase):
     def setUp(self):
-        with psycopg.connect(DB_URL, autocommit=True) as conn:
-            conn.execute("DROP TABLE IF EXISTS articles")
+        reset_database()
+        command.upgrade(alembic_config(), "head")
         self.repo = PostgresArticleRepository(DB_URL, seed_file=str(SEED))
 
     def tearDown(self):
         self.repo.close()
 
-    def test_creates_schema_and_seeds_empty_table(self):
+    def test_not_ready_until_migrated(self):
+        reset_database()
+        repo = PostgresArticleRepository(DB_URL, seed_file=str(SEED))
+        try:
+            self.assertFalse(repo.is_ready())
+            command.upgrade(alembic_config(), "head")
+            self.assertTrue(repo.is_ready())
+            self.assertEqual(len(repo.list_all()), 10)
+        finally:
+            repo.close()
+
+    def test_migrations_downgrade_and_upgrade_again(self):
+        command.downgrade(alembic_config(), "base")
+        self.assertFalse(table_exists("articles"))
+        command.upgrade(alembic_config(), "head")
+        self.assertTrue(table_exists("articles"))
+
+    def test_baseline_adopts_a_table_created_by_the_old_schema_sql(self):
+        self.assertEqual(len(self.repo.list_all()), 10)
+        with psycopg.connect(DB_URL, autocommit=True) as conn:
+            conn.execute("DROP TABLE alembic_version")  # as if only schema.sql had run
+        command.upgrade(alembic_config(), "head")
+        self.assertEqual(len(self.repo.list_all()), 10)  # data kept
+
+    def test_seeds_empty_table(self):
         self.assertTrue(self.repo.is_ready())
         self.assertEqual(len(self.repo.list_all()), 10)
 

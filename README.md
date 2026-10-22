@@ -13,7 +13,6 @@ app/
 │   └── use_cases.py            # ArticleService: list, filter, paginate, get
 ├── infrastructure/
 │   ├── postgres_repository.py  # PostgreSQL adapter (used when DATABASE_URL is set)
-│   ├── schema.sql              # articles table, applied on first connect
 │   └── json_repository.py      # JSON file adapter (used when DATABASE_URL is not set)
 ├── api/
 │   ├── schemas.py              # Public API contract (response models)
@@ -22,8 +21,10 @@ app/
 ├── config.py                   # Settings from environment variables
 ├── logging_setup.py            # JSON logs to stdout
 └── main.py                     # Composition root: wires layers together
+migrations/versions/            # Alembic migrations: the articles table schema, in order
+alembic.ini                     # Alembic config (the URL comes from DATABASE_URL)
 data/news.json                  # 10 mock articles; SEED_FILE for Postgres
-tests/                          # Unit tests (no deps) + API tests (FastAPI)
+tests/                          # Unit tests (no deps) + API tests (FastAPI) + Postgres/migration tests
 ```
 
 Dependencies point inward: `api → application → domain`, and
@@ -80,12 +81,16 @@ docker compose up --build
 curl "http://localhost:8090/api/v1/articles?category=technology"
 ```
 
-Compose starts two containers: `articles-svc` and its own Postgres,
-`articles-db` (database per service). articles-svc waits until the database
-is healthy. On first connect it creates the `articles` table and, because
-`SEED_FILE` is set, loads the 10 seed articles into the empty table. Data
-lives on the named volume `articles-db-data`. To reset to the seed data, run
-`docker compose down -v`.
+Compose starts, in order:
+1. `articles-db`: its own Postgres (database per service).
+2. `articles-migrate`: a one-shot job from the same image that runs
+   `alembic upgrade head` and exits. It shows as `Exited (0)` in
+   `docker compose ps -a`; that's expected.
+3. `articles-svc`: starts only if the migrations succeeded. On first connect,
+   because `SEED_FILE` is set, it loads the 10 seed articles into the empty table.
+
+Data lives on the named volume `articles-db-data`. To reset to the seed data,
+run `docker compose down -v`.
 
 The database publishes no host port. To look inside:
 ```bash
@@ -110,19 +115,34 @@ python -m unittest discover -s tests -p "test_use_cases.py"   # no dependencies
 pytest                                                        # all tests, needs requirements-dev.txt
 ```
 
-The Postgres adapter tests need a throwaway database (they drop the table) and
-are skipped without one:
+The Postgres adapter and migration tests need a throwaway database (they drop
+the tables and run the migrations from scratch) and are skipped without one:
 ```bash
 docker run --rm -d --name articles-test-db -e POSTGRES_PASSWORD=test -p 55433:5432 postgres:17-alpine
 TEST_DATABASE_URL=postgresql://postgres:test@localhost:55433/postgres pytest tests/test_postgres_repository.py
 docker stop articles-test-db
 ```
 
+## Change the schema
+
+The schema lives only in `migrations/versions/`, applied in order and recorded
+in the `alembic_version` table. Never edit a migration that has been deployed;
+add a new one:
+```bash
+alembic revision -m "add source_url to articles" --rev-id 0002   # no database needed
+# write the SQL in upgrade() and downgrade() with op.execute(...)
+docker compose up --build                                         # articles-migrate applies it
+```
+Expand, then contract: every migration must keep both the old and the new
+app version working (add a nullable column first, make it required in a later
+migration), so deploys and rollbacks stay safe. Adding a column also means
+updating `postgres_repository.py` and this README's data model.
+
 ## Configuration (environment variables)
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DATABASE_URL` | *(unset)* | Postgres connection URL. Set → Postgres adapter; unset → JSON file adapter |
+| `DATABASE_URL` | *(unset)* | Postgres connection URL. Set → Postgres adapter; unset → JSON file adapter. Also used by `alembic upgrade head` |
 | `SEED_FILE` | *(unset)* | JSON file loaded into an empty `articles` table on first connect (Postgres only) |
 | `DATA_FILE` | `data/news.json` | JSON adapter's data file when `DATABASE_URL` is unset |
 | `LOG_LEVEL` | `INFO` | Log verbosity |

@@ -4,12 +4,14 @@ Used when DATABASE_URL is set. Nothing is kept in memory, so any number of
 replicas can share one database. Like the JSON adapter, it never crashes
 startup: if the database is unreachable it reports not-ready, and calls
 fail with StorageUnavailable (503) until the database is back.
+
+Tables come from Alembic migrations (`migrations/`), applied before the
+service starts. This adapter never creates or changes them.
 """
 from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Iterator
 
 import psycopg
@@ -22,7 +24,6 @@ from app.infrastructure.json_repository import JsonArticleRepository
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA = Path(__file__).with_name("schema.sql")
 _COLUMNS = (
     "id, slug, title, summary, content, category, author_id, author_name, source, "
     "published_at, updated_at, status, tags, image_url, language, is_featured, "
@@ -33,7 +34,7 @@ _COLUMNS = (
 class PostgresArticleRepository:
     def __init__(self, database_url: str, seed_file: str | None = None) -> None:
         self._seed_file = seed_file
-        self._schema_ready = False
+        self._seed_checked = False
         # Design for failure: short connect/pool timeouts and a statement
         # timeout, so a slow or dead database turns into a fast 503.
         self._pool = ConnectionPool(
@@ -53,15 +54,16 @@ class PostgresArticleRepository:
         # The pool commits on success and rolls back if the block raises.
         try:
             with self._pool.connection() as conn:
-                if not self._schema_ready:
-                    self._prepare(conn)
+                if not self._seed_checked:
+                    self._seed_if_empty(conn)
                 yield conn
         except (psycopg.Error, PoolTimeout) as exc:
             logger.error("Database error", extra={"error": str(exc)})
             raise StorageUnavailable("Article storage is unavailable") from exc
 
-    def _prepare(self, conn: psycopg.Connection) -> None:
-        conn.execute(_SCHEMA.read_text(encoding="utf-8"))
+    def _seed_if_empty(self, conn: psycopg.Connection) -> None:
+        # If migrations haven't run yet, the table is missing: this raises,
+        # the service reports not-ready, and the next call tries again.
         empty = conn.execute("SELECT NOT EXISTS (SELECT 1 FROM articles) AS empty").fetchone()["empty"]
         if empty and self._seed_file:
             # Reuse the JSON adapter to parse and validate the seed file.
@@ -78,7 +80,7 @@ class PostgresArticleRepository:
                 )
             logger.info("Seeded articles", extra={"count": len(seed), "path": self._seed_file})
         conn.commit()
-        self._schema_ready = True
+        self._seed_checked = True
 
     @staticmethod
     def _to_domain(row: dict) -> Article:
