@@ -13,6 +13,7 @@ articles-svc: the news articles read API, the first microservice of the news app
 - Run locally: `uvicorn app.main:app --reload --port 8080` → http://localhost:8080/docs (no `DATABASE_URL`, so it reads `DATA_FILE`)
 - Run in Docker: `docker compose up --build` → host port **8090** (compose maps `8090:8080`) + `articles-db` Postgres + one-shot `articles-migrate`; reset data with `docker compose down -v`
 - New migration: `alembic revision -m "<what>" --rev-id <next 4-digit number>` (no DB needed), then write plain SQL with `op.execute`
+- CI: `.github/workflows/ci.yml` (same file in every service repo; keep them in sync). Every push runs `pytest` with a Postgres service container, builds the image, smoke-tests `/health/ready`, then pushes `ghcr.io/ankurvapte/articles-svc:<full sha>` (plus `:main` on main). Check runs on the repo's Actions tab.
 - No linter/formatter or pytest config is set up.
 
 ## Service-specific notes
